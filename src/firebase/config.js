@@ -3,16 +3,16 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: "AIzaSyBm_OoYLjMp3vjXl9OhCXc7f_ixqD03mUw",
+  authDomain: "gotravel-2f2d5.firebaseapp.com",
+  projectId: "gotravel-2f2d5",
+  storageBucket: "gotravel-2f2d5.firebasestorage.app",
+  messagingSenderId: "109885596499",
+  appId: "1:109885596499:web:18ed595fb0f735d4b137a6",
 };
 
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const appId = import.meta.env.VITE_APP_ID ?? 'gotravel-app';
+export const appId = 'gotravel-app';
