@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  sendEmailVerification,
 } from 'firebase/auth';
 import {
   doc,
@@ -137,6 +138,7 @@ export default function App() {
     try {
       const { user: newUser } = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(newUser, { displayName: name });
+      await sendEmailVerification(newUser);
 
       const profileData = {
         uid: newUser.uid,
