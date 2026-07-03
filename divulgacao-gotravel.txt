@@ -1,0 +1,130 @@
+========================================================
+GOTRAVEL — MATERIAL DE VENDA E DIVULGAÇÃO
+========================================================
+
+
+--------------------------------------------------------
+1. PITCH DE VENDA (estrutura para site, deck ou conversa comercial)
+--------------------------------------------------------
+
+HEADLINE
+Organize viagens em grupo sem planilha, sem grupo de WhatsApp bagunçado e sem brigar por causa da conta.
+
+SUBHEADLINE
+O GoTravel reúne cronograma, votação de passeios e divisão de despesas em um único lugar, em tempo real, para todo o grupo.
+
+O PROBLEMA
+Toda viagem em grupo enfrenta o mesmo caos: um monte de mensagens espalhadas decidindo o roteiro, uma planilha perdida para dividir gastos, e sempre alguém que "esqueceu" de pagar a parte dele. O resultado é atrito no meio de uma viagem que devia ser só diversão.
+
+A SOLUÇÃO
+GoTravel é o app para organizar viagens compartilhadas do início ao fim:
+- Cria a viagem e convida o grupo por e-mail
+- O grupo sugere e vota atividades, montando um cronograma consolidado
+- Cada gasto é lançado e rateado automaticamente entre os participantes
+- Tudo sincronizado em tempo real — todo mundo vê a mesma informação, na hora
+
+PRINCIPAIS FUNCIONALIDADES
+- Criação de viagens e convite de participantes por e-mail
+- Cronograma colaborativo com sugestão e votação de atividades pelo grupo
+- Lançamento de despesas com rateio automático entre membros
+- Painel de "Acerto de Contas" mostrando quem deve para quem
+- Sincronização em tempo real entre todos os participantes
+- Conta própria com confirmação por e-mail
+- Instalável como app (PWA) — funciona direto do navegador, sem loja de aplicativos
+
+DIFERENCIAIS
+- Tudo em um só lugar: chega de dividir a organização entre WhatsApp, planilha e bloco de notas
+- Decisão do grupo, não de uma pessoa só: atividades são sugeridas e aprovadas por votação
+- Rateio automático: sem contas de cabeça, sem "depois eu te devolvo"
+- Tempo real: qualquer atualização aparece na hora para todo mundo
+
+PÚBLICO-ALVO
+Grupos de amigos, famílias ou colegas que organizam viagens compartilhadas e dividem custos — desde uma viagem de fim de semana até uma viagem internacional mais longa.
+
+CHAMADA PARA AÇÃO
+Crie sua conta gratuita e organize a próxima viagem em grupo sem dor de cabeça.
+[link do app]
+
+OBJEÇÕES COMUNS (para conversa de venda)
+- "Já uso grupo de WhatsApp + planilha" → funciona, mas exige que alguém centralize tudo manualmente. O GoTravel faz isso automaticamente e elimina o retrabalho.
+- "É mais um app para instalar" → não precisa instalar nada de loja de aplicativo; funciona direto do navegador e pode ser adicionado à tela inicial.
+- "E se alguém não pagar a parte dele?" → o painel de Acerto de Contas deixa claro e visível para o grupo todo quem deve o quê, reduzindo o atrito de cobrança.
+
+
+--------------------------------------------------------
+2. TEXTOS PARA LINKEDIN
+--------------------------------------------------------
+
+[Versão 1 — foco no problema]
+Toda viagem em grupo tem o mesmo momento de tensão: dividir a conta no final.
+
+Foi pensando nisso que desenvolvemos o GoTravel: um app para organizar viagens compartilhadas com cronograma colaborativo, votação de atividades pelo grupo e rateio automático de despesas — tudo sincronizado em tempo real.
+
+Chega de planilha perdida ou grupo de WhatsApp bagunçado decidindo o roteiro.
+
+Conheça o GoTravel: [link]
+
+#viagem #turismo #produto #startup
+
+---
+
+[Versão 2 — foco em produto/tecnologia]
+Lançamos o GoTravel, um app web para grupos que organizam viagens juntos.
+
+Construído com React, Firebase e sincronização em tempo real, o app permite:
+→ Criar viagens e convidar participantes por e-mail
+→ Sugerir e votar atividades em grupo, montando um cronograma consolidado
+→ Lançar despesas com rateio automático entre os membros
+→ Acompanhar quem deve para quem, sem contas de cabeça
+
+Um problema comum, resolvido com um produto simples e direto.
+
+[link]
+
+#desenvolvimento #react #firebase #produtodigital
+
+---
+
+[Versão 3 — storytelling / lançamento]
+Toda vez que organizávamos uma viagem em grupo, a mesma cena se repetia: decisões espalhadas em conversas de WhatsApp e uma planilha de gastos que ninguém atualizava.
+
+Resolvemos criar o GoTravel para resolver exatamente isso: um lugar único onde o grupo decide o roteiro por votação e as despesas são divididas automaticamente, em tempo real.
+
+Estamos no ar. Se você organiza viagens em grupo, vale a pena conhecer.
+
+[link]
+
+#viagemcompartilhada #gotravel #lançamento
+
+
+--------------------------------------------------------
+3. TEXTOS PARA REDES SOCIAIS (Instagram / Facebook / X)
+--------------------------------------------------------
+
+[Legenda curta 1]
+Viagem em grupo sem planilha e sem grupo de WhatsApp lotado decidindo tudo.
+O GoTravel organiza o roteiro e divide a conta pra você.
+Link na bio.
+
+[Legenda curta 2]
+Quem já organizou viagem em grupo sabe: o difícil não é viajar, é organizar.
+Cronograma, votação de passeios e divisão de despesas — tudo no GoTravel.
+
+[Legenda curta 3]
+Cada um sugere um passeio, o grupo vota, e a conta já sai dividida certinha no final.
+Assim é organizar viagem com o GoTravel.
+
+[Legenda 4 — pergunta/engajamento]
+Quem aqui já brigou com o grupo na hora de fechar a conta da viagem?
+O GoTravel resolve isso: rateio automático e cronograma decidido por votação, em tempo real.
+
+SUGESTÕES DE HASHTAGS
+#gotravel #viagemcompartilhada #viagememgrupo #turismo #appdeviagem #organizaçãodeviagem #dividircontas
+
+
+--------------------------------------------------------
+OBSERVAÇÕES
+--------------------------------------------------------
+- Substituir [link] pelo endereço final do app antes de publicar.
+- Emojis não foram incluídos por padrão; adicione conforme o tom desejado em cada rede.
+- Ajustar a seção de objeções/pitch caso exista um modelo de preços ou plano pago definido.
