@@ -3,6 +3,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Verifica se o usuário autenticado é o criador da viagem informada
+    // (usado para permitir que o criador limpe dados da viagem ao excluí-la)
+    function isTripCreator(appId, tripId) {
+      return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/trips/$(tripId)).data.creator == request.auth.uid;
+    }
+
     // ──────────────────────────────────────────────
     // Raiz dos artefatos: artifacts/{appId}/...
     // ──────────────────────────────────────────────
@@ -44,6 +50,10 @@ service cloud.firestore {
               && request.resource.data.members.size() == resource.data.members.size() + 1
             )
           );
+
+        // Apenas o criador pode apagar a viagem
+        allow delete: if request.auth != null
+          && resource.data.creator == request.auth.uid;
       }
 
       // Convites — leitura aberta a autenticados
@@ -57,6 +67,13 @@ service cloud.firestore {
         // O destinatário pode atualizar o status (aceitar/recusar)
         allow update: if request.auth != null
           && resource.data.toUid == request.auth.uid;
+
+        // O remetente ou o criador da viagem podem apagar o convite
+        allow delete: if request.auth != null
+          && (
+            resource.data.fromUid == request.auth.uid
+            || isTripCreator(appId, resource.data.tripId)
+          );
       }
 
       // Despesas por viagem — leitura por membros autenticados;
@@ -69,9 +86,18 @@ service cloud.firestore {
           && expenseCol.matches('expenses_.*')
           && request.resource.data.uid == request.auth.uid;
 
-        allow update, delete: if request.auth != null
+        allow update: if request.auth != null
           && expenseCol.matches('expenses_.*')
           && resource.data.uid == request.auth.uid;
+
+        // Exclusão: o autor do lançamento ou o criador da viagem
+        // (necessário para o criador poder apagar a viagem inteira)
+        allow delete: if request.auth != null
+          && expenseCol.matches('expenses_.*')
+          && (
+            resource.data.uid == request.auth.uid
+            || isTripCreator(appId, expenseCol.split('_')[1])
+          );
       }
 
       // Dicas e cronograma por viagem
@@ -93,10 +119,14 @@ service cloud.firestore {
             || resource.data.createdBy == request.auth.uid
           );
 
-        // Apenas o autor pode excluir a dica
+        // Exclusão: o autor da dica ou o criador da viagem
+        // (necessário para o criador poder apagar a viagem inteira)
         allow delete: if request.auth != null
           && tipsCol.matches('tips_.*')
-          && resource.data.createdBy == request.auth.uid;
+          && (
+            resource.data.createdBy == request.auth.uid
+            || isTripCreator(appId, tipsCol.split('_')[1])
+          );
       }
     }
   }

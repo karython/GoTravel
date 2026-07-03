@@ -11,7 +11,10 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
   collection,
+  query,
+  where,
   onSnapshot,
   updateDoc,
   deleteDoc,
@@ -354,8 +357,39 @@ export default function App() {
       setNewTripName('');
       setNewTripDesc('');
       showNotification(`Viagem "${payload.name}" criada com sucesso!`, 'success');
-    } catch {
+    } catch (err) {
+      console.error('Erro ao criar viagem:', err);
       showNotification('Erro ao criar viagem.', 'error');
+    }
+  };
+
+  // ──────────────────────────────────────────────
+  // APAGAR VIAGEM (somente o criador)
+  // ──────────────────────────────────────────────
+  const handleDeleteTrip = async () => {
+    if (!activeTripData || activeTripData.creator !== user.uid) return;
+    if (!window.confirm(`Apagar a viagem "${activeTripData.name}"? Essa ação é permanente e vai remover todos os gastos, o cronograma e os convites dela.`)) return;
+
+    try {
+      const expensesSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`));
+      await Promise.all(expensesSnap.docs.map((d) => deleteDoc(d.ref)));
+
+      const tipsSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`));
+      await Promise.all(tipsSnap.docs.map((d) => deleteDoc(d.ref)));
+
+      const invitesSnap = await getDocs(
+        query(collection(db, 'artifacts', appId, 'public', 'data', 'invites'), where('tripId', '==', activeTrip))
+      );
+      await Promise.all(invitesSnap.docs.map((d) => deleteDoc(d.ref)));
+
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trips', activeTrip));
+
+      setActiveTrip(null);
+      setActiveTripData(null);
+      showNotification('Viagem apagada com sucesso.', 'info');
+    } catch (err) {
+      console.error('Erro ao apagar viagem:', err);
+      showNotification('Erro ao apagar a viagem.', 'error');
     }
   };
 
@@ -642,17 +676,20 @@ export default function App() {
       }
 
       const total = activeTripData.members.length;
-      const half = Math.ceil(total / 2);
+      const totalVotes = votesUp.length + votesDown.length;
       let status = 'pending';
 
-      if (votesUp.length > votesDown.length && votesUp.length + votesDown.length >= half) {
-        const conflict = tripTips.some((t) => {
-          if (t.id === tipId || t.status !== 'approved' || t.date !== tipObj.date || t.type !== tipObj.type) return false;
-          return ['passeio', 'cafe'].includes(tipObj.type) ? t.period === tipObj.period : true;
-        });
-        status = conflict ? 'declined' : 'approved';
-      } else if (votesDown.length >= votesUp.length && votesUp.length + votesDown.length >= half) {
-        status = 'declined';
+      // Só decide depois que TODOS os membros votaram
+      if (totalVotes >= total) {
+        if (votesUp.length > votesDown.length) {
+          const conflict = tripTips.some((t) => {
+            if (t.id === tipId || t.status !== 'approved' || t.date !== tipObj.date || t.type !== tipObj.type) return false;
+            return ['passeio', 'cafe'].includes(tipObj.type) ? t.period === tipObj.period : true;
+          });
+          status = conflict ? 'declined' : 'approved';
+        } else {
+          status = 'declined';
+        }
       }
 
       await updateDoc(tipRef, { votesUp, votesDown, status });
@@ -1017,12 +1054,23 @@ export default function App() {
                       <h2 className="text-2xl font-black text-slate-900 mt-2">{activeTripData?.name}</h2>
                       <p className="text-sm text-slate-500 mt-1">{activeTripData?.description || 'Planejamento compartilhado.'}</p>
                     </div>
-                    <button
-                      onClick={() => setIsInviteModalOpen(true)}
-                      className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all w-full md:w-auto"
-                    >
-                      <UserPlus className="w-4 h-4" /> Convidar Amigos
-                    </button>
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <button
+                        onClick={() => setIsInviteModalOpen(true)}
+                        className="flex-1 md:flex-none px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all"
+                      >
+                        <UserPlus className="w-4 h-4" /> Convidar Amigos
+                      </button>
+                      {activeTripData?.creator === user.uid && (
+                        <button
+                          onClick={handleDeleteTrip}
+                          title="Apagar viagem"
+                          className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 border border-rose-100 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* ABAS */}
@@ -1230,7 +1278,7 @@ export default function App() {
                                 const hasVotedUp = tip.votesUp?.includes(user.uid);
                                 const hasVotedDown = tip.votesDown?.includes(user.uid);
                                 const total = activeTripData.members.length;
-                                const required = Math.ceil(total / 2);
+                                const votesCount = (tip.votesUp?.length || 0) + (tip.votesDown?.length || 0);
                                 const isCreator = tip.createdBy === user.uid;
 
                                 return (
@@ -1247,13 +1295,16 @@ export default function App() {
                                     </div>
                                     <div className="space-y-1">
                                       <div className="flex justify-between text-[10px] text-slate-500">
-                                        <span>Sim: {tip.votesUp?.length || 0} / {required}</span>
-                                        <span>Não: {tip.votesDown?.length || 0}</span>
+                                        <span>Sim: {tip.votesUp?.length || 0} • Não: {tip.votesDown?.length || 0}</span>
+                                        <span>{votesCount} / {total} votaram</span>
                                       </div>
                                       <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
                                         <div className="bg-emerald-500 h-full transition-all" style={{ width: `${((tip.votesUp?.length || 0) / total) * 100}%` }} />
                                         <div className="bg-rose-400 h-full transition-all" style={{ width: `${((tip.votesDown?.length || 0) / total) * 100}%` }} />
                                       </div>
+                                      <p className="text-[9px] text-slate-400">
+                                        Aguardando {Math.max(total - votesCount, 0)} voto(s) para decidir
+                                      </p>
                                     </div>
                                     <div className="flex gap-2">
                                       <button
