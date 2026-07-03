@@ -30,9 +30,18 @@ service cloud.firestore {
           && request.resource.data.creator == request.auth.uid
           && request.auth.uid in request.resource.data.members;
 
-        // Atualização: somente membros da viagem podem alterar
+        // Atualização: membros da viagem podem alterar livremente;
+        // um não-membro só pode se auto-adicionar (aceitar convite),
+        // alterando exclusivamente o campo members e somando 1 participante
         allow update: if request.auth != null
-          && request.auth.uid in resource.data.members;
+          && (
+            request.auth.uid in resource.data.members
+            || (
+              request.auth.uid in request.resource.data.members
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+              && request.resource.data.members.size() == resource.data.members.size() + 1
+            )
+          );
       }
 
       // Convites — leitura aberta a autenticados
