@@ -14,6 +14,7 @@ import {
   collection,
   onSnapshot,
   updateDoc,
+  deleteDoc,
   arrayUnion,
   addDoc,
 } from 'firebase/firestore';
@@ -39,6 +40,8 @@ import {
   MapPin,
   CheckCircle,
   AlertCircle,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 import { auth, db, appId } from './firebase/config.js';
@@ -65,6 +68,8 @@ export default function App() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isTipModalOpen, setIsTipModalOpen] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
+  const [editingTipId, setEditingTipId] = useState(null);
 
   const [newTripName, setNewTripName] = useState('');
   const [newTripDesc, setNewTripDesc] = useState('');
@@ -430,6 +435,20 @@ export default function App() {
   // ──────────────────────────────────────────────
   // DESPESAS
   // ──────────────────────────────────────────────
+  const closeExpenseModal = () => {
+    setIsExpenseModalOpen(false);
+    setEditingExpenseId(null);
+    setExpenseValue('');
+    setExpenseDesc('');
+  };
+
+  const handleEditExpenseClick = (exp) => {
+    setEditingExpenseId(exp.id);
+    setExpenseValue(String(exp.value));
+    setExpenseDesc(exp.description);
+    setIsExpenseModalOpen(true);
+  };
+
   const handleAddExpense = async (e) => {
     e.preventDefault();
     const value = parseFloat(expenseValue);
@@ -439,23 +458,38 @@ export default function App() {
     }
 
     try {
-      const expRef = doc(collection(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`));
-      await setDoc(expRef, {
-        id: expRef.id,
-        value,
-        description: expenseDesc,
-        uid: user.uid,
-        userName: userData?.name || 'Participante',
-        createdAt: new Date().toISOString(),
-      });
+      if (editingExpenseId) {
+        const expRef = doc(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`, editingExpenseId);
+        await updateDoc(expRef, { value, description: expenseDesc });
+        showNotification('Despesa atualizada!', 'success');
+      } else {
+        const expRef = doc(collection(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`));
+        await setDoc(expRef, {
+          id: expRef.id,
+          value,
+          description: expenseDesc,
+          uid: user.uid,
+          userName: userData?.name || 'Participante',
+          createdAt: new Date().toISOString(),
+        });
+        showNotification('Despesa registrada e rateada entre o grupo!', 'success');
+      }
 
-      setIsExpenseModalOpen(false);
-      setExpenseValue('');
-      setExpenseDesc('');
-      showNotification('Despesa registrada e rateada entre o grupo!', 'success');
+      closeExpenseModal();
     } catch (err) {
       console.error('Erro ao registrar despesa:', err);
       showNotification('Erro ao registrar despesa.', 'error');
+    }
+  };
+
+  const handleDeleteExpense = async (exp) => {
+    if (!window.confirm('Excluir este lançamento?')) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`, exp.id));
+      showNotification('Despesa excluída.', 'info');
+    } catch (err) {
+      console.error('Erro ao excluir despesa:', err);
+      showNotification('Erro ao excluir despesa.', 'error');
     }
   };
 
@@ -504,6 +538,26 @@ export default function App() {
   // ──────────────────────────────────────────────
   // DICAS / CRONOGRAMA
   // ──────────────────────────────────────────────
+  const closeTipModal = () => {
+    setIsTipModalOpen(false);
+    setEditingTipId(null);
+    setTipType('almoco');
+    setTipPeriod('manha');
+    setTipPlaceName('');
+    setTipDesc('');
+    setTipDate('');
+  };
+
+  const handleEditTipClick = (tip) => {
+    setEditingTipId(tip.id);
+    setTipType(tip.type);
+    setTipPeriod(tip.period || 'manha');
+    setTipPlaceName(tip.placeName);
+    setTipDesc(tip.description);
+    setTipDate(tip.date);
+    setIsTipModalOpen(true);
+  };
+
   const handleAddTip = async (e) => {
     e.preventDefault();
     if (!tipPlaceName.trim() || !tipDesc.trim() || !tipDate) {
@@ -512,6 +566,7 @@ export default function App() {
     }
 
     const isConflict = tripTips.some((tip) => {
+      if (tip.id === editingTipId) return false;
       if (tip.status !== 'approved' || tip.date !== tipDate || tip.type !== tipType) return false;
       return ['passeio', 'cafe'].includes(tipType) ? tip.period === tipPeriod : true;
     });
@@ -522,30 +577,50 @@ export default function App() {
     }
 
     try {
-      const tipRef = doc(collection(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`));
-      await setDoc(tipRef, {
-        id: tipRef.id,
-        type: tipType,
-        period: ['passeio', 'cafe'].includes(tipType) ? tipPeriod : null,
-        placeName: tipPlaceName,
-        description: tipDesc,
-        date: tipDate,
-        createdBy: user.uid,
-        creatorName: userData?.name || 'Participante',
-        status: 'pending',
-        votesUp: [user.uid],
-        votesDown: [],
-        createdAt: new Date().toISOString(),
-      });
+      if (editingTipId) {
+        const tipRef = doc(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`, editingTipId);
+        await updateDoc(tipRef, {
+          type: tipType,
+          period: ['passeio', 'cafe'].includes(tipType) ? tipPeriod : null,
+          placeName: tipPlaceName,
+          description: tipDesc,
+          date: tipDate,
+        });
+        showNotification('Sugestão atualizada!', 'success');
+      } else {
+        const tipRef = doc(collection(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`));
+        await setDoc(tipRef, {
+          id: tipRef.id,
+          type: tipType,
+          period: ['passeio', 'cafe'].includes(tipType) ? tipPeriod : null,
+          placeName: tipPlaceName,
+          description: tipDesc,
+          date: tipDate,
+          createdBy: user.uid,
+          creatorName: userData?.name || 'Participante',
+          status: 'pending',
+          votesUp: [user.uid],
+          votesDown: [],
+          createdAt: new Date().toISOString(),
+        });
+        showNotification('Dica enviada para votação!', 'success');
+      }
 
-      setIsTipModalOpen(false);
-      setTipPlaceName('');
-      setTipDesc('');
-      setTipDate('');
-      showNotification('Dica enviada para votação!', 'success');
+      closeTipModal();
     } catch (err) {
       console.error('Erro ao sugerir atividade:', err);
       showNotification('Falha ao sugerir atividade.', 'error');
+    }
+  };
+
+  const handleDeleteTip = async (tip) => {
+    if (!window.confirm('Excluir esta sugestão do cronograma?')) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`, tip.id));
+      showNotification('Sugestão excluída.', 'info');
+    } catch (err) {
+      console.error('Erro ao excluir sugestão:', err);
+      showNotification('Erro ao excluir sugestão.', 'error');
     }
   };
 
@@ -610,6 +685,12 @@ export default function App() {
           return (order[ka] || 99) - (order[kb] || 99);
         }),
       }));
+  }, [tripTips]);
+
+  const declinedTips = useMemo(() => {
+    return tripTips
+      .filter((t) => t.status === 'declined')
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [tripTips]);
 
   const formatDateFriendly = (dateStr) => {
@@ -1029,41 +1110,112 @@ export default function App() {
                       </div>
 
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 space-y-4">
-                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Confirmadas</h4>
-                          {approvedTimeline.length === 0 ? (
-                            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
-                              <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                              <p className="text-sm font-semibold text-slate-900">Cronograma livre</p>
-                              <p className="text-xs text-slate-500 mt-1">Nenhuma atração aprovada ainda.</p>
-                            </div>
-                          ) : (
-                            <div className="space-y-6">
-                              {approvedTimeline.map((dayGroup) => (
-                                <div key={dayGroup.date} className="relative pl-6 border-l-2 border-blue-100">
-                                  <div className="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-blue-600 border-4 border-white shadow-sm" />
-                                  <h5 className="text-sm font-black text-blue-900 capitalize mb-4">{formatDateFriendly(dayGroup.date)}</h5>
-                                  <div className="space-y-3">
-                                    {dayGroup.items.map((item) => (
-                                      <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-2">
-                                        <div className="flex items-center justify-between">
-                                          <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${getTipBadgeStyle(item.type)}`}>
-                                            {getTipTypeName(item.type, item.period)}
-                                          </span>
-                                          <span className="text-[10px] text-slate-400">Aprovado</span>
-                                        </div>
-                                        <h6 className="text-sm font-bold text-slate-900 flex items-center gap-1">
-                                          <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" /> {item.placeName}
-                                        </h6>
-                                        <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">{item.description}</p>
-                                        <p className="text-[9px] text-slate-400 text-right">por {item.creatorName}</p>
-                                      </div>
-                                    ))}
+                        <div className="lg:col-span-2 space-y-8">
+                          <div className="space-y-4">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Confirmadas</h4>
+                            {approvedTimeline.length === 0 ? (
+                              <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
+                                <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                                <p className="text-sm font-semibold text-slate-900">Cronograma livre</p>
+                                <p className="text-xs text-slate-500 mt-1">Nenhuma atração aprovada ainda.</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-6">
+                                {approvedTimeline.map((dayGroup) => (
+                                  <div key={dayGroup.date} className="relative pl-6 border-l-2 border-blue-100">
+                                    <div className="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-blue-600 border-4 border-white shadow-sm" />
+                                    <h5 className="text-sm font-black text-blue-900 capitalize mb-4">{formatDateFriendly(dayGroup.date)}</h5>
+                                    <div className="space-y-3">
+                                      {dayGroup.items.map((item) => {
+                                        const isCreator = item.createdBy === user.uid;
+                                        return (
+                                          <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-2">
+                                            <div className="flex items-center justify-between">
+                                              <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${getTipBadgeStyle(item.type)}`}>
+                                                {getTipTypeName(item.type, item.period)}
+                                              </span>
+                                              <span className="text-[10px] font-bold text-emerald-600">Aprovado</span>
+                                            </div>
+                                            <h6 className="text-sm font-bold text-slate-900 flex items-center gap-1">
+                                              <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" /> {item.placeName}
+                                            </h6>
+                                            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">{item.description}</p>
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-[10px] text-slate-500">
+                                                <ThumbsUp className="w-3 h-3 inline mr-0.5 text-emerald-500" />{item.votesUp?.length || 0}{' '}
+                                                <ThumbsDown className="w-3 h-3 inline ml-1.5 mr-0.5 text-rose-500" />{item.votesDown?.length || 0}
+                                              </span>
+                                              <div className="flex items-center gap-2">
+                                                {isCreator && (
+                                                  <>
+                                                    <button onClick={() => handleEditTipClick(item)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
+                                                      <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => handleDeleteTip(item)} className="p-1 text-slate-400 hover:text-rose-600 rounded">
+                                                      <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                  </>
+                                                )}
+                                                <span className="text-[9px] text-slate-400">por {item.creatorName}</span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-4">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Rejeitadas</h4>
+                            {declinedTips.length === 0 ? (
+                              <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center text-xs text-slate-400">
+                                Nenhuma sugestão rejeitada.
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {declinedTips.map((tip) => {
+                                  const isCreator = tip.createdBy === user.uid;
+                                  return (
+                                    <div key={tip.id} className="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm flex flex-col gap-2 opacity-80">
+                                      <div className="flex items-center justify-between">
+                                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${getTipBadgeStyle(tip.type)}`}>
+                                          {getTipTypeName(tip.type, tip.period)}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-rose-500">Rejeitado</span>
+                                      </div>
+                                      <h6 className="text-sm font-bold text-slate-900 flex items-center gap-1">
+                                        <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" /> {tip.placeName}
+                                      </h6>
+                                      <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">{tip.description}</p>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] text-slate-500">
+                                          <ThumbsUp className="w-3 h-3 inline mr-0.5 text-emerald-500" />{tip.votesUp?.length || 0}{' '}
+                                          <ThumbsDown className="w-3 h-3 inline ml-1.5 mr-0.5 text-rose-500" />{tip.votesDown?.length || 0}
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                          {isCreator && (
+                                            <>
+                                              <button onClick={() => handleEditTipClick(tip)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
+                                                <Pencil className="w-3.5 h-3.5" />
+                                              </button>
+                                              <button onClick={() => handleDeleteTip(tip)} className="p-1 text-slate-400 hover:text-rose-600 rounded">
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </>
+                                          )}
+                                          <span className="text-[9px] text-slate-400">por {tip.creatorName}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         <div className="lg:col-span-1 space-y-4">
@@ -1079,6 +1231,7 @@ export default function App() {
                                 const hasVotedDown = tip.votesDown?.includes(user.uid);
                                 const total = activeTripData.members.length;
                                 const required = Math.ceil(total / 2);
+                                const isCreator = tip.createdBy === user.uid;
 
                                 return (
                                   <div key={tip.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col gap-3">
@@ -1116,7 +1269,19 @@ export default function App() {
                                         <ThumbsDown className="w-3.5 h-3.5" /> Rejeitar
                                       </button>
                                     </div>
-                                    <span className="text-[9px] text-slate-400 text-right">por {tip.creatorName}</span>
+                                    <div className="flex items-center justify-between">
+                                      {isCreator ? (
+                                        <div className="flex items-center gap-2">
+                                          <button onClick={() => handleEditTipClick(tip)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
+                                            <Pencil className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button onClick={() => handleDeleteTip(tip)} className="p-1 text-slate-400 hover:text-rose-600 rounded">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      ) : <span />}
+                                      <span className="text-[9px] text-slate-400 text-right">por {tip.creatorName}</span>
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -1198,11 +1363,23 @@ export default function App() {
                                         {new Date(exp.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                       </p>
                                     </div>
-                                    <div className="text-right flex-shrink-0">
-                                      <span className="text-sm font-black text-slate-950 block">R$ {exp.value.toFixed(2)}</span>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5">
-                                        R$ {(exp.value / activeTripData.members.length).toFixed(2)} / pessoa
-                                      </span>
+                                    <div className="text-right flex-shrink-0 flex items-center gap-2">
+                                      <div>
+                                        <span className="text-sm font-black text-slate-950 block">R$ {exp.value.toFixed(2)}</span>
+                                        <span className="text-[9px] text-slate-400 block mt-0.5">
+                                          R$ {(exp.value / activeTripData.members.length).toFixed(2)} / pessoa
+                                        </span>
+                                      </div>
+                                      {isSelf && (
+                                        <div className="flex flex-col gap-1">
+                                          <button onClick={() => handleEditExpenseClick(exp)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
+                                            <Pencil className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button onClick={() => handleDeleteExpense(exp)} className="p-1 text-slate-400 hover:text-rose-600 rounded">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 );
@@ -1308,8 +1485,8 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-3xl border border-slate-200 shadow-2xl p-6 flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-950">Novo Lançamento</h3>
-              <button onClick={() => setIsExpenseModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">
+              <h3 className="text-base font-bold text-slate-950">{editingExpenseId ? 'Editar Lançamento' : 'Novo Lançamento'}</h3>
+              <button onClick={closeExpenseModal} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1337,7 +1514,7 @@ export default function App() {
                 />
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setIsExpenseModalOpen(false)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm">Cancelar</button>
+                <button type="button" onClick={closeExpenseModal} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm">Cancelar</button>
                 <button type="submit" className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm shadow-lg shadow-blue-100">Salvar</button>
               </div>
             </form>
@@ -1350,8 +1527,8 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-3xl border border-slate-200 shadow-2xl p-6 flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-950">Sugerir Atividade</h3>
-              <button onClick={() => setIsTipModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">
+              <h3 className="text-base font-bold text-slate-950">{editingTipId ? 'Editar Atividade' : 'Sugerir Atividade'}</h3>
+              <button onClick={closeTipModal} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1415,8 +1592,8 @@ export default function App() {
                 />
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setIsTipModalOpen(false)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm">Cancelar</button>
-                <button type="submit" className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm shadow-lg shadow-blue-100">Enviar para Votação</button>
+                <button type="button" onClick={closeTipModal} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm shadow-lg shadow-blue-100">{editingTipId ? 'Salvar Alterações' : 'Enviar para Votação'}</button>
               </div>
             </form>
           </div>

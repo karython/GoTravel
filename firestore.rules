@@ -59,7 +59,8 @@ service cloud.firestore {
           && resource.data.toUid == request.auth.uid;
       }
 
-      // Despesas por viagem — leitura/criação por membros autenticados
+      // Despesas por viagem — leitura por membros autenticados;
+      // criação/edição/exclusão somente pelo autor do lançamento
       match /public/data/{expenseCol}/{expenseId} {
         allow read: if request.auth != null
           && expenseCol.matches('expenses_.*');
@@ -67,6 +68,10 @@ service cloud.firestore {
         allow create: if request.auth != null
           && expenseCol.matches('expenses_.*')
           && request.resource.data.uid == request.auth.uid;
+
+        allow update, delete: if request.auth != null
+          && expenseCol.matches('expenses_.*')
+          && resource.data.uid == request.auth.uid;
       }
 
       // Dicas e cronograma por viagem
@@ -79,9 +84,19 @@ service cloud.firestore {
           && tipsCol.matches('tips_.*')
           && request.resource.data.createdBy == request.auth.uid;
 
-        // Qualquer autenticado pode votar (atualizar votesUp/votesDown/status)
+        // Qualquer autenticado pode votar (só campos de voto/status);
+        // edição do conteúdo é restrita ao autor da dica
         allow update: if request.auth != null
-          && tipsCol.matches('tips_.*');
+          && tipsCol.matches('tips_.*')
+          && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votesUp', 'votesDown', 'status'])
+            || resource.data.createdBy == request.auth.uid
+          );
+
+        // Apenas o autor pode excluir a dica
+        allow delete: if request.auth != null
+          && tipsCol.matches('tips_.*')
+          && resource.data.createdBy == request.auth.uid;
       }
     }
   }
