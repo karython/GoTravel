@@ -106,6 +106,17 @@ export default function App() {
             verified: currentUser.emailVerified || false,
           });
         }
+
+        if (currentUser.email) {
+          const emailIndexRef = doc(db, 'artifacts', appId, 'public', 'data', 'emails', currentUser.email.toLowerCase().trim());
+          const emailIndexDoc = await getDoc(emailIndexRef);
+          if (!emailIndexDoc.exists()) {
+            await setDoc(emailIndexRef, {
+              uid: currentUser.uid,
+              name: currentUser.displayName || userDoc.data()?.name || 'Viajante',
+            });
+          }
+        }
       } else {
         setUserData(null);
         setActiveTrip(null);
@@ -150,7 +161,7 @@ export default function App() {
       };
 
       await setDoc(doc(db, 'artifacts', appId, 'users', newUser.uid, 'profile', 'data'), profileData);
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'emails', email.toLowerCase().trim()), {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'emails', email.toLowerCase().trim()), {
         uid: newUser.uid,
         name,
       });
@@ -352,7 +363,7 @@ export default function App() {
     }
 
     try {
-      const emailDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'emails', cleanEmail));
+      const emailDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'emails', cleanEmail));
       if (!emailDoc.exists()) {
         showNotification('E-mail não cadastrado no aplicativo.', 'error');
         return;
