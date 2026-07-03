@@ -223,7 +223,8 @@ export default function App() {
       await updateDoc(ref, { verified: true });
       setUserData((prev) => ({ ...prev, verified: true }));
       showNotification('Conta ativada com sucesso!', 'success');
-    } catch {
+    } catch (err) {
+      console.error('Falha ao confirmar ativação:', err);
       showNotification('Falha ao confirmar ativação.', 'error');
     }
   };
@@ -380,7 +381,8 @@ export default function App() {
       showNotification(`Convite enviado para ${cleanEmail}!`, 'success');
       setInviteEmail('');
       setIsInviteModalOpen(false);
-    } catch {
+    } catch (err) {
+      console.error('Erro ao enviar convite:', err);
       showNotification('Erro ao enviar convite.', 'error');
     }
   };
@@ -403,7 +405,8 @@ export default function App() {
         await updateDoc(inviteRef, { status: 'declined' });
         showNotification('Convite recusado.', 'info');
       }
-    } catch {
+    } catch (err) {
+      console.error('Erro ao responder convite:', err);
       showNotification('Erro ao responder convite.', 'error');
     }
   };
@@ -434,7 +437,8 @@ export default function App() {
       setExpenseValue('');
       setExpenseDesc('');
       showNotification('Despesa registrada e rateada entre o grupo!', 'success');
-    } catch {
+    } catch (err) {
+      console.error('Erro ao registrar despesa:', err);
       showNotification('Erro ao registrar despesa.', 'error');
     }
   };
@@ -523,7 +527,8 @@ export default function App() {
       setTipDesc('');
       setTipDate('');
       showNotification('Dica enviada para votação!', 'success');
-    } catch {
+    } catch (err) {
+      console.error('Erro ao sugerir atividade:', err);
       showNotification('Falha ao sugerir atividade.', 'error');
     }
   };
@@ -564,7 +569,8 @@ export default function App() {
       if (status === 'approved') {
         showNotification('Sugestão aprovada pelo grupo!', 'success');
       }
-    } catch {
+    } catch (err) {
+      console.error('Erro ao salvar voto:', err);
       showNotification('Erro ao salvar voto.', 'error');
     }
   };
