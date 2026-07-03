@@ -197,9 +197,28 @@ export default function App() {
     return messages[code] ?? 'Ocorreu um erro ao autenticar. Tente novamente.';
   };
 
-  const confirmEmailSimulation = async () => {
+  const handleResendVerification = async () => {
     if (!user) return;
     try {
+      await sendEmailVerification(user);
+      showNotification('E-mail de confirmação reenviado!', 'success');
+    } catch (err) {
+      if (err.code === 'auth/too-many-requests') {
+        showNotification('Aguarde um pouco antes de reenviar novamente.', 'error');
+      } else {
+        showNotification('Falha ao reenviar o e-mail.', 'error');
+      }
+    }
+  };
+
+  const handleCheckVerification = async () => {
+    if (!user) return;
+    try {
+      await user.reload();
+      if (!user.emailVerified) {
+        showNotification('Ainda não verificado. Confira seu e-mail (e a caixa de spam).', 'error');
+        return;
+      }
       const ref = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
       await updateDoc(ref, { verified: true });
       setUserData((prev) => ({ ...prev, verified: true }));
@@ -780,10 +799,16 @@ export default function App() {
                   </div>
                   <p>Enviamos um link de confirmação para o seu e-mail.</p>
                   <button
-                    onClick={confirmEmailSimulation}
+                    onClick={handleCheckVerification}
                     className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg transition-colors"
                   >
-                    Confirmar Conta
+                    Já confirmei, verificar
+                  </button>
+                  <button
+                    onClick={handleResendVerification}
+                    className="w-full py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-800 font-semibold rounded-lg transition-colors"
+                  >
+                    Reenviar e-mail
                   </button>
                 </div>
               )}
