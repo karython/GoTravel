@@ -304,8 +304,13 @@ export default function App() {
       if (!activeTripData) return;
       const list = [];
       for (const mId of activeTripData.members) {
-        const mDoc = await getDoc(doc(db, 'artifacts', appId, 'users', mId, 'profile', 'data'));
-        list.push(mDoc.exists() ? mDoc.data() : { uid: mId, name: 'Viajante Convidado', email: '' });
+        try {
+          const mDoc = await getDoc(doc(db, 'artifacts', appId, 'users', mId, 'profile', 'data'));
+          list.push(mDoc.exists() ? mDoc.data() : { uid: mId, name: 'Viajante Convidado', email: '' });
+        } catch (err) {
+          console.error('Erro ao carregar membro:', mId, err);
+          list.push({ uid: mId, name: 'Viajante Convidado', email: '' });
+        }
       }
       setTripMembers(list);
     };
