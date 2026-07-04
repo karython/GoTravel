@@ -769,9 +769,7 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm backdrop-blur-md bg-white/95">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="bg-blue-600 text-white p-2 rounded-xl shadow-md shadow-blue-200">
-              <Compass className="w-6 h-6" />
-            </div>
+            <img src="/icons/logo-mark.png" alt="GoTravel" className="w-10 h-10 object-contain" />
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-900">GoTravel</h1>
               <p className="text-xs text-slate-500 font-medium">Viagens Compartilhadas</p>
@@ -819,8 +817,8 @@ export default function App() {
           <div className="max-w-md w-full mx-auto my-auto py-10">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-8">
               <div className="text-center mb-8">
-                <div className="bg-blue-50 text-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <Compass className="w-8 h-8" />
+                <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                  <img src="/icons/logo-mark.png" alt="GoTravel" className="w-full h-full object-contain" />
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900">Planeje viagens juntos</h2>
                 <p className="text-slate-500 mt-2 text-sm">Organize cronogramas, divida contas e compartilhe momentos.</p>
