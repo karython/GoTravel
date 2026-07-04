@@ -1,0 +1,132 @@
+========================================================
+GOTRAVEL — FICHA DA LOJA (GOOGLE PLAY CONSOLE)
+Página: Presença na loja > Ficha principal da loja
+========================================================
+
+Os campos abaixo já respeitam os limites de caracteres do Google Play.
+Copie e cole diretamente nos campos correspondentes do Play Console.
+
+
+--------------------------------------------------------
+1. NOME DO APP (máx. 30 caracteres)
+--------------------------------------------------------
+GoTravel: Viagem em Grupo
+(25/30 caracteres)
+
+
+--------------------------------------------------------
+2. DESCRIÇÃO BREVE (máx. 80 caracteres)
+--------------------------------------------------------
+Organize viagens em grupo: cronograma, votação de passeios e divisão de contas
+(78/80 caracteres)
+
+
+--------------------------------------------------------
+3. DESCRIÇÃO COMPLETA (máx. 4000 caracteres)
+--------------------------------------------------------
+Chega de planilha perdida e de grupo de WhatsApp bagunçado decidindo a viagem!
+
+O GoTravel é o app para organizar viagens em grupo do início ao fim: cronograma colaborativo, votação de passeios e divisão automática das despesas — tudo sincronizado em tempo real para todo o grupo.
+
+POR QUE USAR O GOTRAVEL
+Toda viagem em grupo enfrenta o mesmo caos: mensagens espalhadas decidindo o roteiro, uma planilha perdida para dividir os gastos e sempre alguém que "esqueceu" de pagar a parte dele. O GoTravel resolve isso reunindo tudo em um único lugar, para o grupo inteiro.
+
+PRINCIPAIS FUNCIONALIDADES
+• Crie viagens e convide participantes por e-mail
+• Monte um cronograma colaborativo: o grupo sugere passeios e atividades, e todos votam no que entra no roteiro
+• Lance despesas com rateio automático entre os participantes
+• Acompanhe o painel de Acerto de Contas e veja na hora quem deve para quem
+• Sincronização em tempo real: qualquer atualização aparece imediatamente para todo o grupo
+• Crie sua conta com confirmação por e-mail, com segurança
+• Instale como app direto do navegador, sem precisar de loja de aplicativos
+
+PARA QUEM É
+Grupos de amigos, famílias ou colegas de trabalho que organizam viagens compartilhadas e dividem custos — de uma escapada de fim de semana a uma viagem internacional mais longa.
+
+O QUE TORNA O GOTRAVEL DIFERENTE
+• Tudo em um só lugar: chega de dividir a organização entre WhatsApp, planilha e bloco de notas
+• Decisão do grupo, não de uma pessoa só: atividades são sugeridas e aprovadas por votação
+• Rateio automático: sem contas de cabeça e sem "depois eu te devolvo"
+• Tempo real: qualquer atualização aparece na hora para todo mundo
+
+Baixe o GoTravel e organize a próxima viagem em grupo sem dor de cabeça.
+
+(≈1550/4000 caracteres — há espaço sobrando para ajustes ou novas funcionalidades)
+
+
+--------------------------------------------------------
+4. ÍCONE DO APP
+--------------------------------------------------------
+Requisito do Play Console: PNG de 512 x 512 px, 32 bits.
+
+Já existe em public/icons/icon-512.png (512x512, RGBA). Antes de subir, confirme
+se o fundo não tem transparência total — o Play Store costuma aplicar um fundo
+sólido por trás de ícones com alfa, o que pode distorcer o visual. Se o ícone
+atual tiver cantos/fundo transparentes, gere uma variante com fundo sólido
+(pode reaproveitar a cor da marca #2563eb) antes de enviar.
+
+
+--------------------------------------------------------
+5. GRÁFICO DE DESTAQUE (FEATURE GRAPHIC)
+--------------------------------------------------------
+Requisito: 1024 x 500 px, JPG ou PNG 24 bits (sem transparência).
+Ainda não existe no projeto — precisa ser criado à parte (design gráfico).
+Sugestão de composição: fundo na cor da marca (#2563eb), logo do GoTravel
+centralizado ou à esquerda, e um mockup do app (tela de cronograma ou de
+Acerto de Contas) à direita.
+
+
+--------------------------------------------------------
+6. CAPTURAS DE TELA (SCREENSHOTS)
+--------------------------------------------------------
+Requisito: mínimo 2, máximo 8 por tipo de dispositivo. Proporção entre 16:9 e
+9:16, lado mínimo 320px e máximo 3840px (celular é obrigatório; tablet de
+7" e 10" são opcionais, mas recomendados já que o app é responsivo).
+
+Telas sugeridas para capturar (na ordem em que contam a história do app):
+1. Tela de login/cadastro — primeira impressão da marca
+2. Dashboard com a lista de viagens do usuário
+3. Cronograma colaborativo com sugestões de atividades e votação
+4. Modal/tela de lançamento de despesa
+5. Painel de "Acerto de Contas" mostrando quem deve para quem
+6. Convite de participante por e-mail
+
+Ainda não existem capturas prontas — precisam ser feitas rodando o app
+(ex.: via Chrome DevTools em modo dispositivo móvel, ou instalado como PWA
+num celular) e exportadas nas dimensões acima.
+
+
+--------------------------------------------------------
+7. VÍDEO PROMOCIONAL (opcional)
+--------------------------------------------------------
+Campo aceita apenas link do YouTube. Não obrigatório para publicar — pode
+ser adicionado depois. Se for gravar, um roteiro de 30-45s cobrindo os itens
+da seção 6 funciona bem.
+
+
+--------------------------------------------------------
+8. CATEGORIA E CLASSIFICAÇÃO
+--------------------------------------------------------
+Categoria sugerida: Viagem e local (Travel & Local)
+Classificação indicativa: Livre / Todas as idades (app não tem conteúdo
+sensível — apenas organização de viagens e divisão de despesas)
+
+
+--------------------------------------------------------
+9. CONTATO E LINKS OBRIGATÓRIOS
+--------------------------------------------------------
+E-mail de contato/suporte: usar o mesmo contato do site do desenvolvedor
+(https://karythongomes.com.br)
+Site: https://karythongomes.com.br
+Política de Privacidade (obrigatória para publicar): link público para
+public/privacidade.html após o deploy (ex.: https://<seu-dominio>/privacidade.html)
+
+
+--------------------------------------------------------
+OBSERVAÇÕES
+--------------------------------------------------------
+- Textos já respeitam os limites de caracteres do Play Console — não colar
+  markdown (**negrito**, #título) pois o campo não renderiza formatação,
+  apenas texto simples e quebras de linha.
+- Itens 5, 6 e 7 (gráfico de destaque, capturas de tela e vídeo) são ativos
+  visuais que ainda precisam ser produzidos fora do código-fonte.

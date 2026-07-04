@@ -1451,7 +1451,10 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200 mt-auto py-6">
         <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4 text-slate-500 text-xs">
           <p>© 2026 GoTravel — Viagens Compartilhadas</p>
-          <div className="flex gap-4">
+          <div className="flex gap-4 items-center">
+            <a href="/privacidade.html" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 hover:underline">
+              Privacidade
+            </a>
             <span>Firebase Firestore</span>
             <span>PWA</span>
           </div>
