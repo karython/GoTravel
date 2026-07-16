@@ -6,6 +6,7 @@ import {
   signOut,
   updateProfile,
   sendEmailVerification,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   doc,
@@ -203,6 +204,28 @@ export default function App() {
     showNotification('Sessão encerrada.', 'info');
   };
 
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError(null);
+
+    if (!email) {
+      setAuthError('Informe seu e-mail para recuperar a senha.');
+      setAuthLoading(false);
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email.toLowerCase().trim());
+      showNotification('Enviamos um e-mail com instruções para redefinir sua senha.', 'success');
+      setAuthMode('login');
+    } catch (err) {
+      setAuthError(translateAuthError(err.code));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const translateAuthError = (code) => {
     const messages = {
       'auth/invalid-email': 'E-mail em formato incorreto.',
@@ -212,6 +235,8 @@ export default function App() {
       'auth/invalid-credential': 'E-mail ou senha inválidos.',
       'auth/email-already-in-use': 'Este e-mail já está em uso.',
       'auth/weak-password': 'A senha deve ter ao menos 6 caracteres.',
+      'auth/missing-email': 'Informe um e-mail válido.',
+      'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco e tente novamente.',
     };
     return messages[code] ?? 'Ocorreu um erro ao autenticar. Tente novamente.';
   };
@@ -820,8 +845,14 @@ export default function App() {
                 <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4">
                   <img src="/icons/logo-mark.png" alt="GoTravel" className="w-full h-full object-contain" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900">Planeje viagens juntos</h2>
-                <p className="text-slate-500 mt-2 text-sm">Organize cronogramas, divida contas e compartilhe momentos.</p>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  {authMode === 'forgot' ? 'Recuperar senha' : 'Planeje viagens juntos'}
+                </h2>
+                <p className="text-slate-500 mt-2 text-sm">
+                  {authMode === 'forgot'
+                    ? 'Informe seu e-mail e enviaremos um link para redefinir sua senha.'
+                    : 'Organize cronogramas, divida contas e compartilhe momentos.'}
+                </p>
               </div>
 
               {authError && (
@@ -831,7 +862,10 @@ export default function App() {
                 </div>
               )}
 
-              <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-4">
+              <form
+                onSubmit={authMode === 'login' ? handleLogin : authMode === 'forgot' ? handleForgotPassword : handleRegister}
+                className="space-y-4"
+              >
                 {authMode === 'register' && (
                   <>
                     <div>
@@ -874,24 +908,37 @@ export default function App() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Senha</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                    <input
-                      type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Mínimo 6 caracteres"
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm"
-                      required
-                    />
+                {authMode !== 'forgot' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">Senha</label>
+                      {authMode === 'login' && (
+                        <button
+                          type="button"
+                          onClick={() => { setAuthMode('forgot'); setAuthError(null); }}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                        >
+                          Esqueceu a senha?
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                      <input
+                        type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Mínimo 6 caracteres"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm"
+                        required
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <button
                   type="submit"
                   className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-100 transition-all duration-200 mt-2 text-sm"
                 >
-                  {authMode === 'login' ? 'Entrar na Plataforma' : 'Criar Minha Conta'}
+                  {authMode === 'login' ? 'Entrar na Plataforma' : authMode === 'forgot' ? 'Enviar link de recuperação' : 'Criar Minha Conta'}
                 </button>
               </form>
 
@@ -903,12 +950,21 @@ export default function App() {
               </div>
 
               <div className="text-center">
-                <button
-                  onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(null); }}
-                  className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                  {authMode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'}
-                </button>
+                {authMode === 'forgot' ? (
+                  <button
+                    onClick={() => { setAuthMode('login'); setAuthError(null); }}
+                    className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    Voltar para o Login
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(null); }}
+                    className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    {authMode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
