@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.web.gotravel_2f2d5.twa",
+      "sha256_cert_fingerprints": [
+        "C1:D7:EE:3D:84:FA:65:E1:AF:17:A3:10:6C:35:E4:85:66:FA:6B:6F:8C:49:76:05:01:E1:09:20:F9:35:92:E9",
+        "02:52:4A:9D:9C:67:89:54:C9:28:2A:EA:D0:40:D4:28:C7:72:E1:D7:63:EE:8D:CA:AC:90:54:A9:D4:9B:7B:28"
+      ]
+    }
+  }
+]
