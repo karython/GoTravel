@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   onAuthStateChanged,
   createUserWithEmailAndPassword,
@@ -20,7 +20,9 @@ import {
   updateDoc,
   deleteDoc,
   arrayUnion,
-  addDoc,
+  deleteField,
+  writeBatch,
+  waitForPendingWrites,
 } from 'firebase/firestore';
 import {
   Compass,
@@ -46,9 +48,21 @@ import {
   AlertCircle,
   Pencil,
   Trash2,
+  Flag,
+  RotateCcw,
+  Filter,
+  WifiOff,
+  RefreshCw,
+  Clock,
 } from 'lucide-react';
 
 import { auth, db, appId } from './firebase/config.js';
+import { EXPENSE_CATEGORIES, DEFAULT_CATEGORY, getCategory } from './lib/categories.js';
+import { computeTripSummary, formatBRL } from './lib/finance.js';
+import { notificationsCol, notifyTripMembers, showDeviceNotification } from './lib/notifications.js';
+import { useOnlineStatus, runWrite, isOnline } from './lib/offline.js';
+import NotificationBell from './components/NotificationBell.jsx';
+import TripSummary from './components/TripSummary.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -81,6 +95,14 @@ export default function App() {
 
   const [expenseValue, setExpenseValue] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
+  const [expenseCategory, setExpenseCategory] = useState(DEFAULT_CATEGORY);
+  const [expenseFilterUser, setExpenseFilterUser] = useState('all');
+  const [expenseFilterCategory, setExpenseFilterCategory] = useState('all');
+
+  const [notifications, setNotifications] = useState([]);
+  const [devicePermission, setDevicePermission] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+  );
 
   const [tipType, setTipType] = useState('almoco');
   const [tipPeriod, setTipPeriod] = useState('manha');
@@ -93,6 +115,13 @@ export default function App() {
   const [tripMembers, setTripMembers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
 
+  // Viagem finalizada não aceita novos lançamentos, atividades ou convites
+  const isTripFinished = activeTripData?.status === 'finished';
+
+  // Modo offline: escritas ficam no cache local até a conexão voltar
+  const online = useOnlineStatus();
+  const [syncState, setSyncState] = useState('idle'); // idle | syncing | synced
+
   // ──────────────────────────────────────────────
   // AUTENTICAÇÃO
   // ──────────────────────────────────────────────
@@ -102,28 +131,36 @@ export default function App() {
       setAuthLoading(false);
 
       if (currentUser) {
-        const userDocRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data');
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          setUserData(userDoc.data());
-        } else {
-          setUserData({
-            uid: currentUser.uid,
-            name: currentUser.displayName || 'Viajante',
-            email: currentUser.email || '',
-            phone: '',
-            verified: currentUser.emailVerified || false,
-          });
+        const fallbackProfile = {
+          uid: currentUser.uid,
+          name: currentUser.displayName || 'Viajante',
+          email: currentUser.email || '',
+          phone: '',
+          verified: currentUser.emailVerified || false,
+        };
+
+        // Offline o getDoc lê do cache local; se o perfil nunca foi baixado, ele falha
+        let userDoc = null;
+        try {
+          userDoc = await getDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data'));
+          setUserData(userDoc.exists() ? userDoc.data() : fallbackProfile);
+        } catch (err) {
+          console.error('Perfil indisponível (offline?):', err);
+          setUserData(fallbackProfile);
         }
 
-        if (currentUser.email) {
-          const emailIndexRef = doc(db, 'artifacts', appId, 'public', 'data', 'emails', currentUser.email.toLowerCase().trim());
-          const emailIndexDoc = await getDoc(emailIndexRef);
-          if (!emailIndexDoc.exists()) {
-            await setDoc(emailIndexRef, {
-              uid: currentUser.uid,
-              name: currentUser.displayName || userDoc.data()?.name || 'Viajante',
-            });
+        if (currentUser.email && isOnline()) {
+          try {
+            const emailIndexRef = doc(db, 'artifacts', appId, 'public', 'data', 'emails', currentUser.email.toLowerCase().trim());
+            const emailIndexDoc = await getDoc(emailIndexRef);
+            if (!emailIndexDoc.exists()) {
+              await setDoc(emailIndexRef, {
+                uid: currentUser.uid,
+                name: currentUser.displayName || userDoc?.data()?.name || 'Viajante',
+              });
+            }
+          } catch (err) {
+            console.error('Falha ao atualizar índice de e-mail:', err);
           }
         }
       } else {
@@ -313,23 +350,124 @@ export default function App() {
   }, [user, activeTrip]);
 
   // ──────────────────────────────────────────────
+  // NOTIFICAÇÕES EM TEMPO REAL
+  // ──────────────────────────────────────────────
+  const notificationsLoaded = useRef(false);
+
+  useEffect(() => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+
+    notificationsLoaded.current = false;
+    const q = query(notificationsCol(), where('toUid', '==', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setNotifications(list.slice(0, 50));
+
+      // Alerta apenas as notificações que chegaram depois da carga inicial
+      if (notificationsLoaded.current) {
+        snap.docChanges()
+          .filter((c) => c.type === 'added' && !c.doc.data().read)
+          .forEach((c) => {
+            const n = c.doc.data();
+            if (document.visibilityState === 'visible') {
+              showNotification(`${n.title}: ${n.message.split('\n')[0]}`, 'info');
+            } else {
+              showDeviceNotification(n.title, n.message, c.doc.id);
+            }
+          });
+      }
+      notificationsLoaded.current = true;
+    }, (err) => console.error('Erro ao carregar notificações:', err));
+
+    return () => unsub();
+  }, [user]);
+
+  const notifyActiveTrip = (type, title, message, options = {}) =>
+    notifyTripMembers({
+      trip: options.trip || activeTripData,
+      fromUid: user.uid,
+      fromName: userData?.name,
+      type,
+      title,
+      message,
+      includeSelf: options.includeSelf,
+    });
+
+  const handleOpenNotification = async (n) => {
+    if (!n.read) {
+      try {
+        await updateDoc(doc(notificationsCol(), n.id), { read: true });
+      } catch (err) {
+        console.error('Erro ao marcar notificação:', err);
+      }
+    }
+    const trip = myTrips.find((t) => t.id === n.tripId);
+    if (trip) {
+      setActiveTrip(trip.id);
+      setActiveTripData(trip);
+      if (n.type?.startsWith('expense') || n.type?.startsWith('trip_')) setActiveTab('financeiro');
+      else if (n.type?.startsWith('tip')) setActiveTab('cronograma');
+      else setActiveTab('feed');
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
+    const batch = writeBatch(db);
+    unread.forEach((n) => batch.update(doc(notificationsCol(), n.id), { read: true }));
+    try {
+      await batch.commit();
+    } catch (err) {
+      console.error('Erro ao marcar notificações:', err);
+    }
+  };
+
+  const handleClearReadNotifications = async () => {
+    const read = notifications.filter((n) => n.read);
+    if (read.length === 0) return;
+    const batch = writeBatch(db);
+    read.forEach((n) => batch.delete(doc(notificationsCol(), n.id)));
+    try {
+      await batch.commit();
+    } catch (err) {
+      console.error('Erro ao limpar notificações:', err);
+    }
+  };
+
+  const handleEnableDeviceNotifications = async () => {
+    if (typeof Notification === 'undefined') return;
+    const result = await Notification.requestPermission();
+    setDevicePermission(result);
+    if (result === 'granted') {
+      showNotification('Notificações do dispositivo ativadas!', 'success');
+    } else if (result === 'denied') {
+      showNotification('Permissão negada. Ative nas configurações do navegador.', 'error');
+    }
+  };
+
+  // ──────────────────────────────────────────────
   // DADOS DA VIAGEM ATIVA EM TEMPO REAL
   // ──────────────────────────────────────────────
   useEffect(() => {
     if (!user || !activeTrip) return;
 
     const expensesCol = collection(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`);
-    const unsubExpenses = onSnapshot(expensesCol, (snap) => {
+    const unsubExpenses = onSnapshot(expensesCol, { includeMetadataChanges: true }, (snap) => {
       const list = [];
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => list.push({ id: d.id, ...d.data(), _pending: d.metadata.hasPendingWrites }));
       list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       setTripExpenses(list);
     });
 
     const tipsCol = collection(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`);
-    const unsubTips = onSnapshot(tipsCol, (snap) => {
+    const unsubTips = onSnapshot(tipsCol, { includeMetadataChanges: true }, (snap) => {
       const list = [];
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => list.push({ id: d.id, ...d.data(), _pending: d.metadata.hasPendingWrites }));
       setTripTips(list);
     });
 
@@ -356,6 +494,56 @@ export default function App() {
     };
   }, [user, activeTrip, activeTripData]);
 
+  useEffect(() => {
+    setExpenseFilterUser('all');
+    setExpenseFilterCategory('all');
+  }, [activeTrip]);
+
+  // Ao reconectar, aguarda a fila local ser enviada ao servidor
+  const wasOffline = useRef(!isOnline());
+
+  useEffect(() => {
+    if (!online) {
+      wasOffline.current = true;
+      setSyncState('idle');
+      return;
+    }
+    if (!wasOffline.current || !user) return;
+    wasOffline.current = false;
+
+    let cancelled = false;
+    let hideTimer;
+    setSyncState('syncing');
+    waitForPendingWrites(db)
+      .then(() => {
+        if (cancelled) return;
+        setSyncState('synced');
+        hideTimer = setTimeout(() => setSyncState('idle'), 4000);
+      })
+      .catch((err) => {
+        console.error('Erro ao sincronizar:', err);
+        if (!cancelled) setSyncState('idle');
+      });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(hideTimer);
+    };
+  }, [online, user]);
+
+  const pendingSyncCount =
+    tripExpenses.filter((e) => e._pending).length + tripTips.filter((t) => t._pending).length;
+
+  // Ações que dependem de resposta do servidor não funcionam offline
+  const requireOnline = (action) => {
+    if (isOnline()) return true;
+    showNotification(`Sem conexão: conecte-se à internet para ${action}.`, 'error');
+    return false;
+  };
+
+  const notifySyncError = (what) => () =>
+    showNotification(`Não foi possível sincronizar ${what} feito offline. Ele foi descartado pelo servidor.`, 'error');
+
   // ──────────────────────────────────────────────
   // CRIAR VIAGEM
   // ──────────────────────────────────────────────
@@ -375,13 +563,16 @@ export default function App() {
         createdAt: new Date().toISOString(),
       };
 
-      await setDoc(tripRef, payload);
+      const queued = await runWrite(setDoc(tripRef, payload), notifySyncError('a viagem criada'));
       setActiveTrip(tripRef.id);
       setActiveTripData(payload);
       setIsNewTripModalOpen(false);
       setNewTripName('');
       setNewTripDesc('');
-      showNotification(`Viagem "${payload.name}" criada com sucesso!`, 'success');
+      showNotification(
+        queued ? `Viagem "${payload.name}" salva offline. Será sincronizada ao reconectar.` : `Viagem "${payload.name}" criada com sucesso!`,
+        queued ? 'info' : 'success'
+      );
     } catch (err) {
       console.error('Erro ao criar viagem:', err);
       showNotification('Erro ao criar viagem.', 'error');
@@ -393,9 +584,13 @@ export default function App() {
   // ──────────────────────────────────────────────
   const handleDeleteTrip = async () => {
     if (!activeTripData || activeTripData.creator !== user.uid) return;
+    if (!requireOnline('apagar a viagem')) return;
     if (!window.confirm(`Apagar a viagem "${activeTripData.name}"? Essa ação é permanente e vai remover todos os gastos, o cronograma e os convites dela.`)) return;
 
     try {
+      // Notifica antes de apagar: a regra de criação exige que a viagem exista
+      await notifyActiveTrip('trip_deleted', 'Viagem apagada', `${userData?.name || 'O criador'} apagou a viagem "${activeTripData.name}".`);
+
       const expensesSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`));
       await Promise.all(expensesSnap.docs.map((d) => deleteDoc(d.ref)));
 
@@ -425,6 +620,12 @@ export default function App() {
     e.preventDefault();
     const cleanEmail = inviteEmail.toLowerCase().trim();
     if (!cleanEmail) return;
+
+    if (isTripFinished) {
+      showNotification('Esta viagem já foi finalizada.', 'error');
+      return;
+    }
+    if (!requireOnline('enviar convites')) return;
 
     if (cleanEmail === user.email?.toLowerCase().trim()) {
       showNotification('Você já faz parte desta viagem.', 'error');
@@ -471,15 +672,22 @@ export default function App() {
   // RESPONDER CONVITE
   // ──────────────────────────────────────────────
   const handleRespondInvite = async (invite, accept) => {
+    if (!requireOnline('responder ao convite')) return;
     try {
       const inviteRef = doc(db, 'artifacts', appId, 'public', 'data', 'invites', invite.id);
 
       if (accept) {
         await updateDoc(inviteRef, { status: 'accepted' });
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trips', invite.tripId), {
-          members: arrayUnion(user.uid),
-        });
+        const tripRef = doc(db, 'artifacts', appId, 'public', 'data', 'trips', invite.tripId);
+        await updateDoc(tripRef, { members: arrayUnion(user.uid) });
         setActiveTrip(invite.tripId);
+
+        const tripSnap = await getDoc(tripRef);
+        if (tripSnap.exists()) {
+          await notifyActiveTrip('member_joined', 'Novo membro na viagem', `${userData?.name || 'Um viajante'} entrou na viagem.`, {
+            trip: { id: tripSnap.id, ...tripSnap.data() },
+          });
+        }
         showNotification(`Você entrou na viagem: "${invite.tripName}"!`, 'success');
       } else {
         await updateDoc(inviteRef, { status: 'declined' });
@@ -499,39 +707,70 @@ export default function App() {
     setEditingExpenseId(null);
     setExpenseValue('');
     setExpenseDesc('');
+    setExpenseCategory(DEFAULT_CATEGORY);
+  };
+
+  const openNewExpenseModal = () => {
+    if (isTripFinished) return;
+    setIsExpenseModalOpen(true);
   };
 
   const handleEditExpenseClick = (exp) => {
+    if (isTripFinished) return;
     setEditingExpenseId(exp.id);
     setExpenseValue(String(exp.value));
     setExpenseDesc(exp.description);
+    setExpenseCategory(exp.category || DEFAULT_CATEGORY);
     setIsExpenseModalOpen(true);
   };
 
   const handleAddExpense = async (e) => {
     e.preventDefault();
+    if (isTripFinished) {
+      showNotification('Viagem finalizada: não é possível lançar despesas.', 'error');
+      return;
+    }
     const value = parseFloat(expenseValue);
     if (isNaN(value) || value <= 0 || !expenseDesc.trim()) {
       showNotification('Insira descrição e valor válido.', 'error');
       return;
     }
 
+    const categoryLabel = getCategory(expenseCategory).label;
+    const author = userData?.name || 'Participante';
+
     try {
       if (editingExpenseId) {
         const expRef = doc(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`, editingExpenseId);
-        await updateDoc(expRef, { value, description: expenseDesc });
-        showNotification('Despesa atualizada!', 'success');
+        const queued = await runWrite(
+          updateDoc(expRef, { value, description: expenseDesc, category: expenseCategory }),
+          notifySyncError('o lançamento editado')
+        );
+        showNotification(queued ? 'Edição salva offline. Será sincronizada ao reconectar.' : 'Despesa atualizada!', queued ? 'info' : 'success');
+        notifyActiveTrip('expense_updated', 'Lançamento editado', `${author} editou "${expenseDesc}" (${categoryLabel}): ${formatBRL(value)}.`);
       } else {
         const expRef = doc(collection(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`));
-        await setDoc(expRef, {
-          id: expRef.id,
-          value,
-          description: expenseDesc,
-          uid: user.uid,
-          userName: userData?.name || 'Participante',
-          createdAt: new Date().toISOString(),
-        });
-        showNotification('Despesa registrada e rateada entre o grupo!', 'success');
+        const queued = await runWrite(
+          setDoc(expRef, {
+            id: expRef.id,
+            value,
+            description: expenseDesc,
+            category: expenseCategory,
+            uid: user.uid,
+            userName: author,
+            createdAt: new Date().toISOString(),
+          }),
+          notifySyncError('o lançamento')
+        );
+        showNotification(
+          queued ? 'Lançamento salvo offline. Será sincronizado ao reconectar.' : 'Despesa registrada e rateada entre o grupo!',
+          queued ? 'info' : 'success'
+        );
+        notifyActiveTrip(
+          'expense_created',
+          'Novo lançamento',
+          `${author} lançou "${expenseDesc}" (${categoryLabel}): ${formatBRL(value)} — ${formatBRL(value / activeTripData.members.length)} por pessoa.`
+        );
       }
 
       closeExpenseModal();
@@ -542,10 +781,15 @@ export default function App() {
   };
 
   const handleDeleteExpense = async (exp) => {
+    if (isTripFinished) return;
     if (!window.confirm('Excluir este lançamento?')) return;
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`, exp.id));
-      showNotification('Despesa excluída.', 'info');
+      await runWrite(
+        deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `expenses_${activeTrip}`, exp.id)),
+        notifySyncError('a exclusão')
+      );
+      showNotification(isOnline() ? 'Despesa excluída.' : 'Exclusão salva offline. Será sincronizada ao reconectar.', 'info');
+      notifyActiveTrip('expense_deleted', 'Lançamento excluído', `${userData?.name || 'Um membro'} excluiu "${exp.description}" (${formatBRL(exp.value)}).`);
     } catch (err) {
       console.error('Erro ao excluir despesa:', err);
       showNotification('Erro ao excluir despesa.', 'error');
@@ -556,43 +800,100 @@ export default function App() {
   // RATEIO FINANCEIRO
   // ──────────────────────────────────────────────
   const financialSummary = useMemo(() => {
-    if (!activeTripData || tripExpenses.length === 0 || tripMembers.length === 0) {
-      return { total: 0, perPerson: 0, transfers: [] };
+    if (!activeTripData) {
+      return computeTripSummary([], [], []);
     }
-
-    const total = tripExpenses.reduce((acc, e) => acc + e.value, 0);
-    const memberCount = activeTripData.members.length;
-    const perPerson = total / memberCount;
-
-    const paidMap = {};
-    activeTripData.members.forEach((id) => { paidMap[id] = 0; });
-    tripExpenses.forEach((exp) => { paidMap[exp.uid] = (paidMap[exp.uid] ?? 0) + exp.value; });
-
-    const debtors = [];
-    const creditors = [];
-
-    activeTripData.members.forEach((id) => {
-      const balance = (paidMap[id] ?? 0) - perPerson;
-      const member = tripMembers.find((m) => m.uid === id) || { uid: id, name: 'Membro' };
-      if (balance < -0.01) debtors.push({ ...member, amount: Math.abs(balance) });
-      else if (balance > 0.01) creditors.push({ ...member, amount: balance });
-    });
-
-    const transfers = [];
-    let di = 0;
-    let ci = 0;
-
-    while (di < debtors.length && ci < creditors.length) {
-      const min = Math.min(debtors[di].amount, creditors[ci].amount);
-      transfers.push({ from: debtors[di].name, to: creditors[ci].name, amount: min });
-      debtors[di].amount -= min;
-      creditors[ci].amount -= min;
-      if (debtors[di].amount < 0.01) di++;
-      if (creditors[ci].amount < 0.01) ci++;
-    }
-
-    return { total, perPerson, transfers };
+    return computeTripSummary(activeTripData.members, tripMembers, tripExpenses);
   }, [activeTripData, tripExpenses, tripMembers]);
+
+  // Lançamentos filtrados por quem lançou e por categoria
+  const filteredExpenses = useMemo(() => {
+    return tripExpenses.filter((exp) => {
+      if (expenseFilterUser !== 'all' && exp.uid !== expenseFilterUser) return false;
+      if (expenseFilterCategory !== 'all' && (exp.category || DEFAULT_CATEGORY) !== expenseFilterCategory) return false;
+      return true;
+    });
+  }, [tripExpenses, expenseFilterUser, expenseFilterCategory]);
+
+  const filteredTotal = filteredExpenses.reduce((acc, e) => acc + e.value, 0);
+  const hasExpenseFilter = expenseFilterUser !== 'all' || expenseFilterCategory !== 'all';
+
+  // ──────────────────────────────────────────────
+  // FINALIZAR / REABRIR VIAGEM (somente o criador)
+  // ──────────────────────────────────────────────
+  const handleFinishTrip = async () => {
+    if (!activeTripData || activeTripData.creator !== user.uid || isTripFinished) return;
+    if (!requireOnline('finalizar a viagem')) return;
+    if (!window.confirm(`Finalizar a viagem "${activeTripData.name}"? Depois disso ninguém poderá lançar ou alterar despesas e atividades. Todos os membros receberão o resumo do rateio.`)) return;
+
+    try {
+      // Recarrega os perfis para garantir nomes atualizados no resumo congelado
+      const profiles = await Promise.all(
+        activeTripData.members.map(async (mId) => {
+          const mDoc = await getDoc(doc(db, 'artifacts', appId, 'users', mId, 'profile', 'data'));
+          return mDoc.exists() ? mDoc.data() : { uid: mId };
+        })
+      );
+      const summary = computeTripSummary(activeTripData.members, profiles, tripExpenses);
+      const finishedAt = new Date().toISOString();
+
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trips', activeTrip), {
+        status: 'finished',
+        finishedAt,
+        finishedBy: user.uid,
+        finalSummary: summary,
+      });
+
+      await notifyActiveTrip(
+        'trip_finished',
+        'Viagem finalizada',
+        (uid) => {
+          const me = summary.perMember.find((m) => m.uid === uid);
+          const lines = [
+            `Total da viagem: ${formatBRL(summary.total)}`,
+            `Sua parte no rateio: ${formatBRL(summary.perPerson)}`,
+          ];
+          if (me) {
+            lines.push(`Você pagou: ${formatBRL(me.paid)}`);
+            if (me.balance > 0.01) lines.push(`Você deve receber: ${formatBRL(me.balance)}`);
+            else if (me.balance < -0.01) lines.push(`Você deve pagar: ${formatBRL(Math.abs(me.balance))}`);
+            else lines.push('Você está quitado.');
+          }
+          summary.transfers
+            .filter((t) => t.fromUid === uid)
+            .forEach((t) => lines.push(`→ Pagar ${formatBRL(t.amount)} para ${t.to}`));
+          return lines.join('\n');
+        },
+        { includeSelf: true }
+      );
+
+      setActiveTab('financeiro');
+      showNotification('Viagem finalizada! O resumo foi enviado a todos os membros.', 'success');
+    } catch (err) {
+      console.error('Erro ao finalizar viagem:', err);
+      showNotification('Erro ao finalizar a viagem.', 'error');
+    }
+  };
+
+  const handleReopenTrip = async () => {
+    if (!activeTripData || activeTripData.creator !== user.uid || !isTripFinished) return;
+    if (!requireOnline('reabrir a viagem')) return;
+    if (!window.confirm('Reabrir esta viagem para novos lançamentos? O resumo final será descartado.')) return;
+
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trips', activeTrip), {
+        status: 'open',
+        finishedAt: deleteField(),
+        finishedBy: deleteField(),
+        finalSummary: deleteField(),
+      });
+      notifyActiveTrip('trip_reopened', 'Viagem reaberta', `${userData?.name || 'O criador'} reabriu a viagem para novos lançamentos.`);
+      showNotification('Viagem reaberta.', 'info');
+    } catch (err) {
+      console.error('Erro ao reabrir viagem:', err);
+      showNotification('Erro ao reabrir a viagem.', 'error');
+    }
+  };
 
   // ──────────────────────────────────────────────
   // DICAS / CRONOGRAMA
@@ -607,7 +908,13 @@ export default function App() {
     setTipDate('');
   };
 
+  const openNewTipModal = () => {
+    if (isTripFinished) return;
+    setIsTipModalOpen(true);
+  };
+
   const handleEditTipClick = (tip) => {
+    if (isTripFinished) return;
     setEditingTipId(tip.id);
     setTipType(tip.type);
     setTipPeriod(tip.period || 'manha');
@@ -619,6 +926,10 @@ export default function App() {
 
   const handleAddTip = async (e) => {
     e.preventDefault();
+    if (isTripFinished) {
+      showNotification('Viagem finalizada: o cronograma está fechado.', 'error');
+      return;
+    }
     if (!tipPlaceName.trim() || !tipDesc.trim() || !tipDate) {
       showNotification('Preencha todos os campos da sugestão.', 'error');
       return;
@@ -638,17 +949,18 @@ export default function App() {
     try {
       if (editingTipId) {
         const tipRef = doc(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`, editingTipId);
-        await updateDoc(tipRef, {
+        await runWrite(updateDoc(tipRef, {
           type: tipType,
           period: ['passeio', 'cafe'].includes(tipType) ? tipPeriod : null,
           placeName: tipPlaceName,
           description: tipDesc,
           date: tipDate,
-        });
+        }), notifySyncError('a atividade editada'));
         showNotification('Sugestão atualizada!', 'success');
+        notifyActiveTrip('tip_updated', 'Atividade editada', `${userData?.name || 'Um membro'} editou "${tipPlaceName}" (${getTipTypeName(tipType, tipPeriod)}).`);
       } else {
         const tipRef = doc(collection(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`));
-        await setDoc(tipRef, {
+        await runWrite(setDoc(tipRef, {
           id: tipRef.id,
           type: tipType,
           period: ['passeio', 'cafe'].includes(tipType) ? tipPeriod : null,
@@ -661,8 +973,13 @@ export default function App() {
           votesUp: [user.uid],
           votesDown: [],
           createdAt: new Date().toISOString(),
-        });
-        showNotification('Dica enviada para votação!', 'success');
+        }), notifySyncError('a atividade sugerida'));
+        showNotification(isOnline() ? 'Dica enviada para votação!' : 'Sugestão salva offline. Será sincronizada ao reconectar.', isOnline() ? 'success' : 'info');
+        notifyActiveTrip(
+          'tip_created',
+          'Nova atividade para votar',
+          `${userData?.name || 'Um membro'} sugeriu "${tipPlaceName}" (${getTipTypeName(tipType, tipPeriod)}) em ${tipDate.split('-').reverse().join('/')}.`
+        );
       }
 
       closeTipModal();
@@ -673,10 +990,15 @@ export default function App() {
   };
 
   const handleDeleteTip = async (tip) => {
+    if (isTripFinished) return;
     if (!window.confirm('Excluir esta sugestão do cronograma?')) return;
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`, tip.id));
+      await runWrite(
+        deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`, tip.id)),
+        notifySyncError('a exclusão da atividade')
+      );
       showNotification('Sugestão excluída.', 'info');
+      notifyActiveTrip('tip_deleted', 'Atividade excluída', `${userData?.name || 'Um membro'} excluiu "${tip.placeName}" do cronograma.`);
     } catch (err) {
       console.error('Erro ao excluir sugestão:', err);
       showNotification('Erro ao excluir sugestão.', 'error');
@@ -684,6 +1006,7 @@ export default function App() {
   };
 
   const handleVote = async (tipId, isApprove) => {
+    if (isTripFinished) return;
     try {
       const tipRef = doc(db, 'artifacts', appId, 'public', 'data', `tips_${activeTrip}`, tipId);
       const tipObj = tripTips.find((t) => t.id === tipId);
@@ -717,10 +1040,18 @@ export default function App() {
         }
       }
 
-      await updateDoc(tipRef, { votesUp, votesDown, status });
+      await runWrite(updateDoc(tipRef, { votesUp, votesDown, status }), notifySyncError('o voto'));
 
       if (status === 'approved') {
         showNotification('Sugestão aprovada pelo grupo!', 'success');
+      }
+
+      if (status !== 'pending' && tipObj.status !== status) {
+        notifyActiveTrip(
+          status === 'approved' ? 'tip_approved' : 'tip_declined',
+          status === 'approved' ? 'Atividade aprovada' : 'Atividade rejeitada',
+          `"${tipObj.placeName}" foi ${status === 'approved' ? 'aprovada e entrou no cronograma' : 'rejeitada pelo grupo'} (${votesUp.length} sim × ${votesDown.length} não).`
+        );
       }
     } catch (err) {
       console.error('Erro ao salvar voto:', err);
@@ -807,6 +1138,14 @@ export default function App() {
                 <span className="text-sm font-semibold text-slate-900">{userData?.name || 'Viajante'}</span>
                 <span className="text-xs text-slate-500">{userData?.email}</span>
               </div>
+              <NotificationBell
+                notifications={notifications}
+                onOpen={handleOpenNotification}
+                onMarkAllRead={handleMarkAllNotificationsRead}
+                onClearRead={handleClearReadNotifications}
+                devicePermission={devicePermission}
+                onEnableDevice={handleEnableDeviceNotifications}
+              />
               <button
                 onClick={handleLogout}
                 className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
@@ -831,6 +1170,30 @@ export default function App() {
              notification.type === 'error' ? <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" /> :
              <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />}
             <span className="text-sm font-medium">{notification.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* STATUS DE CONEXÃO / SINCRONIZAÇÃO */}
+      {user && !online && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900">
+          <div className="max-w-6xl mx-auto px-4 py-2 flex items-center gap-2 text-xs font-medium">
+            <WifiOff className="w-4 h-4 flex-shrink-0 text-amber-600" />
+            <span>
+              Você está offline. Lançamentos e atividades ficam salvos no aparelho e serão sincronizados ao reconectar
+              {pendingSyncCount > 0 && <> — <strong>{pendingSyncCount} pendente(s)</strong> nesta viagem</>}.
+            </span>
+          </div>
+        </div>
+      )}
+      {user && online && syncState !== 'idle' && (
+        <div className={`border-b ${syncState === 'syncing' ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+          <div className="max-w-6xl mx-auto px-4 py-2 flex items-center gap-2 text-xs font-medium">
+            {syncState === 'syncing' ? (
+              <><RefreshCw className="w-4 h-4 flex-shrink-0 text-blue-600 animate-spin" /> Conexão restabelecida. Sincronizando alterações feitas offline...</>
+            ) : (
+              <><CheckCircle className="w-4 h-4 flex-shrink-0 text-emerald-600" /> Tudo sincronizado.</>
+            )}
           </div>
         </div>
       )}
@@ -1103,18 +1466,42 @@ export default function App() {
                   <div className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full uppercase tracking-wider">Viagem Oficial</span>
+                        {isTripFinished ? (
+                          <span className="text-xs font-semibold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                            <Lock className="w-3 h-3" /> Viagem Finalizada
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full uppercase tracking-wider">Viagem em Andamento</span>
+                        )}
                       </div>
                       <h2 className="text-2xl font-black text-slate-900 mt-2">{activeTripData?.name}</h2>
                       <p className="text-sm text-slate-500 mt-1">{activeTripData?.description || 'Planejamento compartilhado.'}</p>
                     </div>
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <button
-                        onClick={() => setIsInviteModalOpen(true)}
-                        className="flex-1 md:flex-none px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all"
-                      >
-                        <UserPlus className="w-4 h-4" /> Convidar Amigos
-                      </button>
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                      {!isTripFinished && (
+                        <button
+                          onClick={() => setIsInviteModalOpen(true)}
+                          className="flex-1 md:flex-none px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all"
+                        >
+                          <UserPlus className="w-4 h-4" /> Convidar Amigos
+                        </button>
+                      )}
+                      {activeTripData?.creator === user.uid && !isTripFinished && (
+                        <button
+                          onClick={handleFinishTrip}
+                          className="flex-1 md:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all"
+                        >
+                          <Flag className="w-4 h-4" /> Finalizar Viagem
+                        </button>
+                      )}
+                      {activeTripData?.creator === user.uid && isTripFinished && (
+                        <button
+                          onClick={handleReopenTrip}
+                          className="flex-1 md:flex-none px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                        >
+                          <RotateCcw className="w-4 h-4" /> Reabrir
+                        </button>
+                      )}
                       {activeTripData?.creator === user.uid && (
                         <button
                           onClick={handleDeleteTrip}
@@ -1203,12 +1590,18 @@ export default function App() {
                           <h3 className="text-sm font-bold text-slate-950 uppercase tracking-wide">Cronograma Consolidado</h3>
                           <p className="text-xs text-slate-500 mt-1">Votado pelos integrantes. Almoços, jantares, cafés e passeios.</p>
                         </div>
-                        <button
-                          onClick={() => setIsTipModalOpen(true)}
-                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-100 flex items-center gap-1.5 transition-all w-full md:w-auto justify-center"
-                        >
-                          <Plus className="w-4 h-4" /> Sugerir Atividade
-                        </button>
+                        {isTripFinished ? (
+                          <span className="px-4 py-2.5 bg-slate-100 text-slate-500 text-xs font-semibold rounded-xl flex items-center gap-1.5 w-full md:w-auto justify-center">
+                            <Lock className="w-4 h-4" /> Cronograma fechado
+                          </span>
+                        ) : (
+                          <button
+                            onClick={openNewTipModal}
+                            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-100 flex items-center gap-1.5 transition-all w-full md:w-auto justify-center"
+                          >
+                            <Plus className="w-4 h-4" /> Sugerir Atividade
+                          </button>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1248,7 +1641,7 @@ export default function App() {
                                                 <ThumbsDown className="w-3 h-3 inline ml-1.5 mr-0.5 text-rose-500" />{item.votesDown?.length || 0}
                                               </span>
                                               <div className="flex items-center gap-2">
-                                                {isCreator && (
+                                                {isCreator && !isTripFinished && (
                                                   <>
                                                     <button onClick={() => handleEditTipClick(item)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
                                                       <Pencil className="w-3.5 h-3.5" />
@@ -1299,7 +1692,7 @@ export default function App() {
                                           <ThumbsDown className="w-3 h-3 inline ml-1.5 mr-0.5 text-rose-500" />{tip.votesDown?.length || 0}
                                         </span>
                                         <div className="flex items-center gap-2">
-                                          {isCreator && (
+                                          {isCreator && !isTripFinished && (
                                             <>
                                               <button onClick={() => handleEditTipClick(tip)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
                                                 <Pencil className="w-3.5 h-3.5" />
@@ -1341,7 +1734,10 @@ export default function App() {
                                       <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${getTipBadgeStyle(tip.type)}`}>
                                         {getTipTypeName(tip.type, tip.period)}
                                       </span>
-                                      <span className="text-[10px] text-slate-400">{tip.date.split('-').reverse().slice(0, 2).join('/')}</span>
+                                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                        {tip._pending && <Clock className="w-3 h-3 text-amber-600" aria-label="Aguardando sincronização" />}
+                                        {tip.date.split('-').reverse().slice(0, 2).join('/')}
+                                      </span>
                                     </div>
                                     <div>
                                       <h6 className="text-xs font-bold text-slate-900">{tip.placeName}</h6>
@@ -1360,7 +1756,7 @@ export default function App() {
                                         Aguardando {Math.max(total - votesCount, 0)} voto(s) para decidir
                                       </p>
                                     </div>
-                                    <div className="flex gap-2">
+                                    {!isTripFinished && <div className="flex gap-2">
                                       <button
                                         onClick={() => handleVote(tip.id, true)}
                                         className={`flex-1 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all ${hasVotedUp ? 'bg-emerald-100 text-emerald-800' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'}`}
@@ -1373,9 +1769,9 @@ export default function App() {
                                       >
                                         <ThumbsDown className="w-3.5 h-3.5" /> Rejeitar
                                       </button>
-                                    </div>
+                                    </div>}
                                     <div className="flex items-center justify-between">
-                                      {isCreator ? (
+                                      {isCreator && !isTripFinished ? (
                                         <div className="flex items-center gap-2">
                                           <button onClick={() => handleEditTipClick(tip)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
                                             <Pencil className="w-3.5 h-3.5" />
@@ -1398,6 +1794,14 @@ export default function App() {
                   )}
 
                   {/* ABA: FINANCEIRO */}
+                  {activeTab === 'financeiro' && isTripFinished && (
+                    <TripSummary
+                      summary={activeTripData.finalSummary}
+                      finishedAt={activeTripData.finishedAt}
+                      currentUid={user.uid}
+                    />
+                  )}
+
                   {activeTab === 'financeiro' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                       <div className="lg:col-span-1 flex flex-col gap-6">
@@ -1439,33 +1843,104 @@ export default function App() {
                               <h3 className="text-sm font-bold text-slate-950 uppercase tracking-wide">Lançamentos</h3>
                               <p className="text-xs text-slate-500 mt-1">Contribuições individuais da viagem.</p>
                             </div>
-                            <button
-                              onClick={() => setIsExpenseModalOpen(true)}
-                              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-100 flex items-center gap-1.5 justify-center transition-all"
-                            >
-                              <Plus className="w-4 h-4" /> Registrar
-                            </button>
+                            {isTripFinished ? (
+                              <span className="px-4 py-2.5 bg-slate-100 text-slate-500 text-xs font-semibold rounded-xl flex items-center gap-1.5 justify-center">
+                                <Lock className="w-4 h-4" /> Lançamentos encerrados
+                              </span>
+                            ) : (
+                              <button
+                                onClick={openNewExpenseModal}
+                                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-100 flex items-center gap-1.5 justify-center transition-all"
+                              >
+                                <Plus className="w-4 h-4" /> Registrar
+                              </button>
+                            )}
                           </div>
+
+                          {tripExpenses.length > 0 && (
+                            <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-4 p-3 bg-slate-50 border border-slate-100 rounded-2xl">
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider sm:pb-2.5">
+                                <Filter className="w-3.5 h-3.5" /> Filtros
+                              </div>
+                              <label className="flex-1 flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Lançado por</span>
+                                <select
+                                  value={expenseFilterUser}
+                                  onChange={(e) => setExpenseFilterUser(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                >
+                                  <option value="all">Todos os membros</option>
+                                  {financialSummary.perMember.map((m) => (
+                                    <option key={m.uid} value={m.uid}>{m.uid === user.uid ? `${m.name} (Você)` : m.name}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="flex-1 flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Categoria</span>
+                                <select
+                                  value={expenseFilterCategory}
+                                  onChange={(e) => setExpenseFilterCategory(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                >
+                                  <option value="all">Todas as categorias</option>
+                                  {EXPENSE_CATEGORIES.map((c) => (
+                                    <option key={c.key} value={c.key}>{c.label}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              {hasExpenseFilter && (
+                                <button
+                                  onClick={() => { setExpenseFilterUser('all'); setExpenseFilterCategory('all'); }}
+                                  className="px-3 py-2 text-xs font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-xl"
+                                >
+                                  Limpar
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {hasExpenseFilter && (
+                            <p className="text-xs text-slate-600 mb-3">
+                              <strong>{filteredExpenses.length}</strong> lançamento(s) filtrado(s) somando <strong>{formatBRL(filteredTotal)}</strong>
+                              {financialSummary.total > 0 && ` (${((filteredTotal / financialSummary.total) * 100).toFixed(0)}% do total)`}
+                            </p>
+                          )}
 
                           {tripExpenses.length === 0 ? (
                             <div className="text-center py-12 border border-dashed border-slate-200 rounded-2xl">
                               <DollarSign className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                               <p className="text-sm font-semibold text-slate-800">Sem lançamentos</p>
                             </div>
+                          ) : filteredExpenses.length === 0 ? (
+                            <div className="text-center py-10 border border-dashed border-slate-200 rounded-2xl">
+                              <Filter className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                              <p className="text-sm font-semibold text-slate-800">Nenhum lançamento com esses filtros</p>
+                            </div>
                           ) : (
                             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                              {tripExpenses.map((exp) => {
+                              {filteredExpenses.map((exp) => {
                                 const isSelf = exp.uid === user.uid;
+                                const category = getCategory(exp.category);
                                 return (
                                   <div
                                     key={exp.id}
                                     className={`p-4 rounded-2xl border flex items-center justify-between ${isSelf ? 'bg-blue-50/40 border-blue-100' : 'bg-white border-slate-100'}`}
                                   >
                                     <div className="truncate pr-3">
-                                      <p className="text-xs font-bold text-slate-900 truncate">{exp.description}</p>
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider flex-shrink-0 ${category.badge}`}>
+                                          {category.label}
+                                        </span>
+                                        <p className="text-xs font-bold text-slate-900 truncate">{exp.description}</p>
+                                      </div>
                                       <p className="text-[10px] text-slate-500 mt-1">
                                         Por: <strong>{isSelf ? 'Você' : exp.userName}</strong> •{' '}
                                         {new Date(exp.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                        {exp._pending && (
+                                          <span className="ml-1.5 inline-flex items-center gap-0.5 text-amber-700 font-semibold">
+                                            <Clock className="w-3 h-3" /> aguardando sincronização
+                                          </span>
+                                        )}
                                       </p>
                                     </div>
                                     <div className="text-right flex-shrink-0 flex items-center gap-2">
@@ -1475,7 +1950,7 @@ export default function App() {
                                           R$ {(exp.value / activeTripData.members.length).toFixed(2)} / pessoa
                                         </span>
                                       </div>
-                                      {isSelf && (
+                                      {isSelf && !isTripFinished && (
                                         <div className="flex flex-col gap-1">
                                           <button onClick={() => handleEditExpenseClick(exp)} className="p-1 text-slate-400 hover:text-blue-600 rounded">
                                             <Pencil className="w-3.5 h-3.5" />
@@ -1610,6 +2085,19 @@ export default function App() {
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-sm"
                     required
                   />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Categoria</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {EXPENSE_CATEGORIES.map((c) => (
+                    <button
+                      key={c.key} type="button" onClick={() => setExpenseCategory(c.key)}
+                      className={`py-1.5 rounded-lg text-xs font-semibold border transition-all ${expenseCategory === c.key ? 'bg-blue-50 border-blue-400 text-blue-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div>

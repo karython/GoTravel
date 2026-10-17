@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gotravel-cache-v1';
+const CACHE_NAME = 'gotravel-cache-v3';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -44,5 +44,31 @@ self.addEventListener('fetch', (event) => {
         return response;
       });
     })
+  );
+});
+
+// Ao tocar numa notificação do sistema, foca o app aberto ou abre uma nova janela
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const client = clients.find((c) => c.url.startsWith(self.location.origin));
+      if (client) return client.focus();
+      return self.clients.openWindow('/');
+    })
+  );
+});
+
+// A página envia os arquivos já carregados para garantir o funcionamento offline
+self.addEventListener('message', (event) => {
+  if (event.data?.type !== 'CACHE_URLS' || !Array.isArray(event.data.urls)) return;
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        event.data.urls.map((url) =>
+          cache.match(url).then((hit) => hit || cache.add(url).catch(() => undefined))
+        )
+      )
+    )
   );
 });

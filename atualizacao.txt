@@ -1,0 +1,10 @@
+novos recursos
+- finalizar viagem e nao permitir mais lancamentos
+- ao finalizar enviar uma notificacao para todos os membros da sala com o 
+    valor total e o valor individual rateado de cada um
+- ao finalizar, mostrar os dados descritivos como esta e um grafico para 
+    rateio dos usuarios, e tipos de gastos
+- adicionar filtros em todo o processo dos lancamentos, filtrar pelo usuiario o 
+    que cada um lancou, escolher uma categoria para filtrar por categoria
+- colocar notificacao, a cada novo lancamento ou qualquer alteracao na sala notificar todos os usuarios
+- tenha uma versa ofline, ao fazer um lancamento, deixe salvo em memoria local ate ter novamente conexao com a internet e sincronizar
